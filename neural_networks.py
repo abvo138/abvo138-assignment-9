@@ -26,9 +26,23 @@ class MLP:
             raise ValueError(f"Unsupported activation: {activation}")
 
         # Initialize weights and biases
-        self.weights_input_hidden = np.random.randn(input_dim, hidden_dim) * 0.1
-        self.bias_hidden = np.zeros((1, hidden_dim))
+
+        ############################## OLD ######################
+        '''self.weights_input_hidden = np.random.randn(input_dim, hidden_dim) * 0.1
         self.weights_hidden_output = np.random.randn(hidden_dim, output_dim) * 0.1
+        '''
+        #########################################################
+        
+        ############################## NEW ######################
+        if activation == 'relu':
+            self.weights_input_hidden = np.random.randn(input_dim, hidden_dim) * np.sqrt(2 / input_dim)
+            self.weights_hidden_output = np.random.randn(hidden_dim, output_dim) * np.sqrt(2 / hidden_dim)
+        else:
+            self.weights_input_hidden = np.random.randn(input_dim, hidden_dim) * 0.1
+            self.weights_hidden_output = np.random.randn(hidden_dim, output_dim) * 0.1
+
+        #########################################################
+        self.bias_hidden = np.zeros((1, hidden_dim))
         self.bias_output = np.zeros((1, output_dim))
 
         self.hidden_activations = None
@@ -37,6 +51,13 @@ class MLP:
     def forward(self, X):
         self.hidden_pre_activation = X @ self.weights_input_hidden + self.bias_hidden
         self.hidden_activations = self.activation_fn(self.hidden_pre_activation)
+        
+        # Debug: Check percentage of inactive neurons for ReLU
+        if hasattr(self, 'activation_fn') and self.activation_fn == np.maximum:  # Check if ReLU is active
+            zero_activations = np.sum(self.hidden_activations == 0) / self.hidden_activations.size
+            print(f"ReLU Debug: {zero_activations * 100:.2f}% of neurons are inactive")
+
+        
         self.output_pre_activation = self.hidden_activations @ self.weights_hidden_output + self.bias_output
         self.output = self.activation_fn(self.output_pre_activation)
         return self.output
@@ -191,6 +212,7 @@ def update(frame, mlp, ax_input, ax_hidden, ax_gradient, X, y):
 
     # Title and limits
     ax_gradient.set_title(f"Gradients at Step {frame * 10}")
+
     ###############################################
 
 def visualize(activation, lr, step_num):
