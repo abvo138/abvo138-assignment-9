@@ -13,11 +13,14 @@ class MLP:
     def __init__(self, input_dim, hidden_dim, output_dim, lr, activation='tanh'):
         np.random.seed(0)
         self.lr = lr
+        self.activation_name = activation
+
+        # Initialize activations and their derivatives
         if activation == 'tanh':
             self.activation_fn = np.tanh
             self.activation_derivative = lambda x: 1 - np.tanh(x) ** 2
         elif activation == 'sigmoid':
-            self.activation_fn = lambda x: 1 / (1 + np.exp(-x))
+            self.activation_fn = lambda x: 1 / (1 + np.exp(-np.clip(x, -500, 500)))  # Clip for stability
             self.activation_derivative = lambda x: x * (1 - x)
         elif activation == 'relu':
             self.activation_fn = lambda x: np.maximum(0, x)
@@ -25,58 +28,50 @@ class MLP:
         else:
             raise ValueError(f"Unsupported activation: {activation}")
 
-        # Initialize weights and biases
-
-        ############################## OLD ######################
-        '''self.weights_input_hidden = np.random.randn(input_dim, hidden_dim) * 0.1
-        self.weights_hidden_output = np.random.randn(hidden_dim, output_dim) * 0.1
-        '''
-        #########################################################
-        
-        ############################## NEW ######################
-        if activation == 'relu':
-            self.weights_input_hidden = np.random.randn(input_dim, hidden_dim) * np.sqrt(2 / input_dim)
-            self.weights_hidden_output = np.random.randn(hidden_dim, output_dim) * np.sqrt(2 / hidden_dim)
-        else:
-            self.weights_input_hidden = np.random.randn(input_dim, hidden_dim) * 0.1
-            self.weights_hidden_output = np.random.randn(hidden_dim, output_dim) * 0.1
-
-        #########################################################
+        # Initialize weights with He initialization for ReLU
+        self.weights_input_hidden = np.random.randn(input_dim, hidden_dim) * np.sqrt(2 / input_dim)
+        self.weights_hidden_output = np.random.randn(hidden_dim, output_dim) * np.sqrt(2 / hidden_dim)
         self.bias_hidden = np.zeros((1, hidden_dim))
         self.bias_output = np.zeros((1, output_dim))
 
-        self.hidden_activations = None
-        self.gradients = None
+        self.gradients = {
+            "weights_input_hidden": np.zeros_like(self.weights_input_hidden),
+            "weights_hidden_output": np.zeros_like(self.weights_hidden_output),
+        }
+
 
     def forward(self, X):
         self.hidden_pre_activation = X @ self.weights_input_hidden + self.bias_hidden
+        self.hidden_pre_activation = np.clip(self.hidden_pre_activation, -1e6, 1e6)  # Prevent overflow
         self.hidden_activations = self.activation_fn(self.hidden_pre_activation)
-        
-        # Debug: Check percentage of inactive neurons for ReLU
-        if hasattr(self, 'activation_fn') and self.activation_fn == np.maximum:  # Check if ReLU is active
-            zero_activations = np.sum(self.hidden_activations == 0) / self.hidden_activations.size
-            print(f"ReLU Debug: {zero_activations * 100:.2f}% of neurons are inactive")
 
-        
         self.output_pre_activation = self.hidden_activations @ self.weights_hidden_output + self.bias_output
+        self.output_pre_activation = np.clip(self.output_pre_activation, -1e6, 1e6)  # Prevent overflow
         self.output = self.activation_fn(self.output_pre_activation)
+
+        self.output = np.clip(self.output, 1e-15, 1 - 1e-15)  # Avoid log(0)
         return self.output
 
     def backward(self, X, y):
-        output_error = self.output - y
-        output_delta = output_error * self.activation_derivative(self.output)
+        y = (y + 1) / 2  # Normalize labels
+        output_delta = self.output - y
+
         hidden_error = output_delta @ self.weights_hidden_output.T
         hidden_delta = hidden_error * self.activation_derivative(self.hidden_activations)
 
+        self.gradients["weights_input_hidden"] = np.abs(X.T @ hidden_delta)
+        self.gradients["weights_hidden_output"] = np.abs(self.hidden_activations.T @ output_delta)
+
+        # Gradient clipping to prevent exploding gradients
+        np.clip(output_delta, -1e2, 1e2, out=output_delta)
+        np.clip(hidden_delta, -1e2, 1e2, out=hidden_delta)
+
+        # Update weights
         self.weights_hidden_output -= self.lr * self.hidden_activations.T @ output_delta
         self.bias_output -= self.lr * np.sum(output_delta, axis=0, keepdims=True)
         self.weights_input_hidden -= self.lr * X.T @ hidden_delta
         self.bias_hidden -= self.lr * np.sum(hidden_delta, axis=0, keepdims=True)
 
-        self.gradients = {
-            "weights_input_hidden": np.abs(self.weights_input_hidden),
-            "weights_hidden_output": np.abs(self.weights_hidden_output),
-        }
 
 def generate_data(n_samples=100):
     np.random.seed(0)
